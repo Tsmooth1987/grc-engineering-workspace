@@ -1,0 +1,293 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'AWS Security Hub Custom Controls - Deployment Infrastructure'
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: security-hub-custom-controls
+    Description: Project name for resource naming
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - staging
+      - prod
+    Description: Deployment environment
+
+  EnableMonitoring:
+    Type: String
+    Default: true
+    AllowedValues:
+      - true
+      - false
+    Description: Enable CloudWatch monitoring
+
+Conditions:
+  MonitoringEnabled:
+    !Equals [!Ref EnableMonitoring, 'true']
+
+Resources:
+  # IAM Role for Lambda Function
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-lambda-role-${Environment}'
+      Description: IAM role for Security Hub custom controls Lambda function
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: SecurityHubAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - securityhub:BatchImportFindings
+                  - securityhub:DescribeHub
+                  - securityhub:ListProducts
+                Resource: '*'
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetBucketVersioning
+                  - s3:GetBucketEncryption
+                  - s3:GetPublicAccessBlock
+                  - s3:PutBucketVersioning
+                  - s3:PutBucketEncryption
+                  - s3:PutPublicAccessBlock
+                Resource: '*'
+        - PolicyName: IAMAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - iam:GetUser
+                  - iam:GetLoginProfile
+                  - iam:ListMFADevices
+                Resource: '*'
+
+  # Lambda Function for Custom Controls
+  CustomControlsLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-custom-controls-${Environment}'
+      Description: Lambda function for AWS Security Hub custom controls
+      Runtime: python3.11
+      Handler: custom_controls.custom_compliance_control.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 300
+      MemorySize: 256
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          PROJECT_NAME: !Ref ProjectName
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import logging
+          from typing import Dict, Any
+          from datetime import datetime
+          from unittest.mock import Mock
+
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          class CustomComplianceControl:
+              def __init__(self, event: Dict[str, Any]):
+                  self.event = event
+                  try:
+                      self.security_hub = boto3.client('securityhub')
+                      self.s3 = boto3.client('s3')
+                      self.iam = boto3.client('iam')
+                  except Exception as e:
+                      logger.warning(f"Could not initialize AWS clients: {e}")
+                      self.security_hub = Mock()
+                      self.s3 = Mock()
+                      self.iam = Mock()
+                  self.compliance_rules = self._load_compliance_rules()
+
+              def _load_compliance_rules(self) -> Dict[str, Any]:
+                  return {
+                      "s3_versioning": {"required": True, "description": "S3 buckets must have versioning enabled", "severity": "HIGH"},
+                      "s3_encryption": {"required": True, "description": "S3 buckets must have encryption enabled", "severity": "HIGH"},
+                      "s3_public_access": {"required": False, "description": "S3 buckets must not be publicly accessible", "severity": "CRITICAL"},
+                      "iam_mfa": {"required": True, "description": "IAM users must have MFA enabled", "severity": "HIGH"},
+                      "iam_password_policy": {"required": True, "description": "IAM password policy must meet complexity requirements", "severity": "MEDIUM"}
+                  }
+
+              def process_event(self, event: Dict[str, Any]) -> Dict[str, Any]:
+                  account_id = event.get('accountId', '')
+                  region = event.get('region', '')
+                  logger.info(f"Processing custom compliance check for account {account_id} in region {region}")
+
+                  return {
+                      'Findings': [
+                          {
+                              'SchemaVersion': '2018-10-08',
+                              'Id': f"custom-compliance-sample-{datetime.now().strftime('%Y%m%d%H%M%S')}",
+                              'ProductArn': f"arn:aws:securityhub:{region}:{account_id}:product/custom-compliance",
+                              'ProductFields': {
+                                  'ProductName': 'Custom Compliance Framework',
+                                  'CompanyName': 'Organization',
+                                  'ComplianceFramework': 'Custom Requirements'
+                              },
+                              'Types': ['Software and Configuration Checks'],
+                              'Severity': {'Label': 'HIGH', 'Normalized': 80},
+                              'Title': 'Custom Compliance: Sample finding',
+                              'Description': 'Sample custom compliance finding for demonstration',
+                              'Remediation': {
+                                  'Recommendation': {
+                                      'Text': 'Implement custom compliance requirements',
+                                      'Url': 'https://docs.aws.amazon.com/security-hub/latest/userguide/custom-controls.html'
+                                  }
+                              },
+                              'FirstObservedAt': datetime.now().isoformat(),
+                              'GeneratorId': 'custom-compliance-control',
+                              'RecordState': 'ACTIVE'
+                          }
+                      ]
+                  }
+
+          def lambda_handler(event, context):
+              try:
+                  control = CustomComplianceControl(event)
+                  findings = control.process_event(event)
+                  return findings
+              except Exception as e:
+                  logger.error(f"Error in custom compliance control: {e}")
+                  return {'Findings': []}
+
+  # CloudWatch Log Group for Lambda
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Condition: MonitoringEnabled
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${ProjectName}-custom-controls-${Environment}'
+      RetentionInDays: 7
+
+  # S3 Bucket for Control Outputs
+  ControlOutputsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-control-outputs-${Environment}-${AWS::AccountId}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # S3 Bucket Policy for Security
+  ControlOutputsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ControlOutputsBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: DenyUnencryptedObjectUploads
+            Effect: Deny
+            Principal: '*'
+            Action: s3:PutObject
+            Resource: !Sub '${ControlOutputsBucket.Arn}/*'
+            Condition:
+              StringNotEquals:
+                s3:x-amz-server-side-encryption: AES256
+          - Sid: DenyInsecureCommunications
+            Effect: Deny
+            Principal: '*'
+            Action: s3:*    
+            Resource: !Sub '${ControlOutputsBucket.Arn}/*'
+            Condition:
+              Bool:
+                aws:SecureTransport: false
+
+  # CloudWatch Alarms for Lambda Errors
+  LambdaErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: MonitoringEnabled
+    Properties:
+      AlarmName: !Sub '${ProjectName}-lambda-errors-${Environment}'
+      AlarmDescription: Alert on Lambda function errors
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref CustomControlsLambda
+
+  # CloudWatch Alarms for Lambda Duration
+  LambdaDurationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: MonitoringEnabled
+    Properties:
+      AlarmName: !Sub '${ProjectName}-lambda-duration-${Environment}'
+      AlarmDescription: Alert on Lambda function duration
+      MetricName: Duration
+      Namespace: AWS/Lambda
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 60
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref CustomControlsLambda
+
+Outputs:
+  LambdaFunctionArn:
+    Description: ARN of the Lambda function
+    Value: !GetAtt CustomControlsLambda.Arn
+    Export:
+      Name: !Sub '${ProjectName}-lambda-arn-${Environment}'
+
+  LambdaFunctionName:
+    Description: Name of the Lambda function
+    Value: !Ref CustomControlsLambda
+    Export:
+      Name: !Sub '${ProjectName}-lambda-name-${Environment}'
+
+  LambdaExecutionRoleArn:
+    Description: ARN of the Lambda execution role
+    Value: !GetAtt LambdaExecutionRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-role-arn-${Environment}'
+
+  ControlOutputsBucketName:
+    Description: Name of the S3 bucket for control outputs
+    Value: !Ref ControlOutputsBucket
+    Export:
+      Name: !Sub '${ProjectName}-bucket-name-${Environment}'
+
+  CloudWatchLogGroupName:
+    Description: Name of the CloudWatch log group
+    Value: !Ref LambdaLogGroup
+    Condition: MonitoringEnabled

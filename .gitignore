@@ -1,0 +1,70 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+venv/
+env/
+ENV/
+grc-labs/
+
+# AWS
+*.pem
+*.key
+access-keys/
+secrets/
+.aws/credentials
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Reports
+*.numbers
+*.xlsx
+*.csv
+!requirements.txt
+
+# Logs
+*.log
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfvars
+.terraform.lock.hcl
+
+# Archive
+ARCHIVE/
+OTHER-WORK/
+
+# Existing repositories
+GRC-Portfolio/
+grc-labs/
+
+# Temporary files
+*.tmp
+*.bak
+*.save

@@ -1,0 +1,45 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Cross-account IAM role for Security Hub aggregation - Deploy to member accounts'
+
+Parameters:
+  ManagementAccountId:
+    Type: String
+    Description: AWS Account ID of the management/aggregator account
+    AllowedPattern: '^\d{12}$'
+
+Resources:
+  SecurityHubAggregatorRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: SecurityHubAggregatorRole
+      Description: Allows management account to read Security Hub findings
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${ManagementAccountId}:root'
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                sts:ExternalId: 'SecurityHubAggregator'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/SecurityAudit
+      Policies:
+        - PolicyName: SecurityHubReadAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - securityhub:GetFindings
+                  - securityhub:DescribeHub
+                  - securityhub:GetEnabledStandards
+                Resource: '*'
+
+Outputs:
+  RoleArn:
+    Description: ARN of the cross-account role
+    Value: !GetAtt SecurityHubAggregatorRole.Arn
+    Export:
+      Name: SecurityHubAggregatorRoleArn

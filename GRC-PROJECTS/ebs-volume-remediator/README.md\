@@ -1,0 +1,21 @@
+# EBS Volume Remediator
+
+Audits and automatically deletes old, unattached EBS volumes to reduce costs and attack surface.
+
+## Features
+- Identifies unattached EBS volumes
+- Automatically deletes old volumes
+- Dry-run mode for safety
+- Cost optimization and security improvement
+
+## Usage
+```bash
+python3 ebs_remediator.py --dry-run
+python3 ebs_remediator.py
+
+Then:
+
+```bash
+git init
+git add .
+git commit -m "Initial commit: EBS Volume Remediator -

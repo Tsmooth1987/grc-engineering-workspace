@@ -1,0 +1,84 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Multi-Account Security Hub Aggregator - Management account resources'
+
+Resources:
+  ReportBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldReports
+            Status: Enabled
+            ExpirationInDays: 90
+
+  AggregatorLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: MultiAccountSecurityHubAggregatorRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: AggregatorPermissions
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                Resource: !Sub '${ReportBucket.Arn}/*'
+              - Effect: Allow
+                Action:
+                  - organizations:ListAccounts
+                  - organizations:DescribeAccount
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - sts:AssumeRole
+                Resource: 'arn:aws:iam::*:role/SecurityHubAggregatorRole'
+
+  AggregatorLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: multi-account-security-hub-aggregator
+      Handler: lambda_function.lambda_handler
+      Role: !GetAtt AggregatorLambdaRole.Arn
+      Runtime: python3.11
+      Timeout: 900
+      MemorySize: 1024
+      Environment:
+        Variables:
+          S3_BUCKET_NAME: !Ref ReportBucket
+          CROSS_ACCOUNT_ROLE_NAME: SecurityHubAggregatorRole
+      Code:
+        ZipFile: |
+          def lambda_handler(event, context):
+              return {'statusCode': 200, 'body': 'Placeholder'}
+
+Outputs:
+  BucketName:
+    Description: S3 bucket for reports
+    Value: !Ref ReportBucket
+  
+  LambdaFunctionName:
+    Description: Lambda function name
+    Value: !Ref AggregatorLambda
+  
+  LambdaRoleArn:
+    Description: Lambda execution role ARN
+    Value: !GetAtt AggregatorLambdaRole.Arn
