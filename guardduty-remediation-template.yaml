@@ -1,0 +1,71 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'GuardDuty Auto-Remediation'
+
+Resources:
+  RemediationLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: guardduty-auto-remediator
+      Runtime: python3.9
+      Handler: index.lambda_handler
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import logging
+          
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+          
+          def lambda_handler(event, context):
+              finding = event['detail']['findings'][0]
+              finding_type = finding['type']
+              logger.info(f"Processing GuardDuty finding: {finding_type}")
+              return {'status': 'processed', 'finding_id': finding['id']}
+      Role: !GetAtt LambdaRole.Arn
+      Timeout: 30
+
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: GuardDutyRemediation
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:ModifyInstanceAttribute
+                  - ec2:StopInstances
+                  - iam:ListAccessKeys
+                  - iam:DisableAccessKey
+                Resource: '*'
+
+  GuardDutyEventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Trigger Lambda on GuardDuty findings
+      EventPattern:
+        source:
+          - aws.guardduty
+        detail-type:
+          - GuardDuty Finding
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt RemediationLambda.Arn
+
+  LambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt RemediationLambda.Arn
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
