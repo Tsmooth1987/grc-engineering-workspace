@@ -1,0 +1,94 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Custom Config Rule for S3 Encryption Check'
+
+Resources:
+  ConfigRule:
+    Type: AWS::Config::ConfigRule
+    Properties:
+      ConfigRuleName: s3-bucket-encryption-check
+      Description: Checks if S3 buckets have encryption enabled
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::S3::Bucket
+      Source:
+        Owner: CUSTOM_LAMBDA
+        SourceIdentifier: !GetAtt LambdaFunction.Arn
+        SourceDetails:
+          - EventSource: aws.config
+            MessageType: ConfigurationItemChangeNotification
+
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: s3-encryption-config-rule
+      Runtime: python3.9
+      Handler: index.lambda_handler
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          
+          def evaluate_compliance(configuration, rule_parameters):
+              resource_id = configuration['resourceId']
+              bucket_name = resource_id.split('/')[-1]
+              s3 = boto3.client('s3')
+              
+              try:
+                  encryption = s3.get_bucket_encryption(Bucket=bucket_name)
+                  if 'ServerSideEncryptionConfiguration' in encryption:
+                      return {
+                          'compliance_type': 'COMPLIANT',
+                          'annotation': 'S3 bucket has encryption enabled'
+                      }
+                  else:
+                      return {
+                          'compliance_type': 'NON_COMPLIANT',
+                          'annotation': 'S3 bucket does not have encryption enabled'
+                      }
+              except Exception as e:
+                  return {
+                      'compliance_type': 'INSUFFICIENT_DATA',
+                      'annotation': f'Error: {str(e)}'
+                  }
+          
+          def lambda_handler(event, context):
+              invoking_event = json.loads(event['invokingEvent'])
+              configuration_item = invoking_event['configurationItem']
+              result = evaluate_compliance(configuration_item, event.get('ruleParameters', {}))
+              return {
+                  'compliance_type': result['compliance_type'],
+                  'annotation': result['annotation'],
+                  'compliance_resource_id': configuration_item['resourceId'],
+                  'compliance_resource_type': configuration_item['resourceType']
+              }
+      Role: !GetAtt LambdaRole.Arn
+      Timeout: 30
+
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSConfigRulesExecutionRole
+      Policies:
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetBucketEncryption
+                Resource: '*'
+
+  LambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt LambdaFunction.Arn
+      Action: lambda:InvokeFunction
+      Principal: config.amazonaws.com

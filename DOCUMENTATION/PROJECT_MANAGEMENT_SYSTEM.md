@@ -45,9 +45,9 @@
 | Multi-Account Security Hub Aggregator | ✅ Production | [Link](https://github.com/Tsmooth1987/multi-account-security-hub-aggregator) | Listed | - | Multi-account aggregation |
 | Least-Privilege Compliance Checker | ✅ Production | [Link](https://github.com/Tsmooth1987/least-privilege-checker) | Listed | - | 5 violation types detected |
 | S3 Auto-Remediator | ✅ Production | [Link](https://github.com/Tsmooth1987/s3-auto-remediator) | Listed | - | Auto-remediation with dry-run |
-| EBS Volume Remediator | ✅ Production | [Link](https://github.com/Tsmooth1987/ebs-volume-remediator) | Listed | - | $2.4K monthly savings |
+| EBS Volume Remediator | ✅ Production | [Link](https://github.com/Tsmooth1987/ebs-volume-remediator) | Listed | - | Automated cleanup of unattached volumes |
 | GRC Alerter | ✅ Production | [Link](https://github.com/Tsmooth1987/grc-alerter) | Listed | - | Real-time SNS alerts |
-| S3 Bucket Auditor | ✅ Production | [Link](https://github.com/Tsmooth1987/s3-bucket-auditor) | Listed | - | 100% compliance in 24h |
+| S3 Bucket Auditor | ✅ Production | [Link](https://github.com/Tsmooth1987/s3-bucket-auditor) | Listed | - | S3 bucket compliance auditing |
 | IAM Policy Auditor | ✅ Production | [Link](https://github.com/Tsmooth1987/iam-policy-auditor) | Listed | - | Overly permissive policies |
 | EC2 Security Group Auditor | ✅ Production | [Link](https://github.com/Tsmooth1987/ec2-sg-auditor) | Listed | - | Risky security group rules |
 | IAM MFA Auditor | ✅ Production | [Link](https://github.com/Tsmooth1987/iam-mfa-auditor) | Listed | - | MFA compliance enforcement |
